@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>神社探索レーダーアプリ</title>
+    <title>神社巡りサポーター</title>
     
     <link rel="icon" type="image/png" href="./torii.png">
     <link rel="apple-touch-icon" href="./torii.png">
@@ -181,7 +181,7 @@
         </div>
         <div id="title-logo" class="splash-content">
             <img src="assets/title_logo.png" alt="神社探索レーダー" style="width: 220px; height: auto;" onerror="this.style.display='none'">
-            <h1 style="letter-spacing: 2px;">神社探索レーダー</h1>
+            <h1 style="letter-spacing: 2px;">神社巡りサポーター</h1>
         </div>
     </div>
 
@@ -199,7 +199,7 @@
             <button class="btn" style="padding:5px 10px;" onclick="openEditPopup('height')">変更</button>
         </div>
         <div class="menu-item">
-            <span>足: <b id="menu-foot">--</b>cm</span>
+            <span>足サイズ: <b id="menu-foot">--</b>cm</span>
             <button class="btn" style="padding:5px 10px;" onclick="openEditPopup('foot')">変更</button>
         </div>
         <div class="menu-item">
@@ -229,9 +229,9 @@
     </div>
 
     <div id="screen-main" class="screen">
-        <h2 style="margin-top: 40px;">通常探索モード</h2>
+        <h2 style="margin-top: 40px;">デフォルトモード</h2>
         <div class="box" style="font-size:11px; background:#f9f9f9; text-align: center;">
-            現在位置 ➔ 緯度: <span id="gps-lat">取得中...</span> | 経度: <span id="gps-lng">取得中...</span>
+            現在位置　・・・北緯: <span id="gps-lat">取得中...</span> | 東経: <span id="gps-lng">取得中...</span>
         </div>
         
         <div id="shrine-list" style="width:100%; display:flex; flex-direction:column; align-items:center;">
@@ -243,6 +243,10 @@
         <h2 style="margin-top: 40px;">タイムアタック</h2>
         <div class="box" style="text-align:center;">
             <div id="ta-timer" style="font-size: 32px; font-weight:bold; margin-bottom:15px;">00:00.00</div>
+            <!-- 💡ここを追加：抽選中プログレスバー -->
+            <div id="ta-progress-container" style="display: none; width: 100%; background-color: #eeeeee; border: var(--border-style); border-radius: var(--radius); height: 16px; margin: 15px 0; overflow: hidden; position: relative;">
+                <div id="ta-progress-bar" style="width: 0%; height: 100%; background-color: #000000; transition: width 0.1s linear;"></div>
+            </div>
             
             <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
                 <button class="btn" id="ta-lottery-btn" onclick="drawTaLottery()">抽選する</button>
@@ -543,33 +547,74 @@
             taIsPaused = false;
             taElapsedBeforePause = 0;
         }
-
         function drawTaLottery() {
-            navigator.geolocation.getCurrentPosition((pos) => {
+            // ボタンを一時的に無効化し、多重クリックを防止
+            const lotteryBtn = document.getElementById("ta-lottery-btn");
+            lotteryBtn.disabled = true;
+
+            navigator.geolocation.getCurrentPosition(async (pos) => {
                 const uLat = pos.coords.latitude;
                 const uLng = pos.coords.longitude;
 
+                // 20km圏内の候補を選出
                 const candidates = ALL_SHRINES_DB.filter(shrine => {
                     return getDistance(uLat, uLng, shrine.北緯, shrine.東経) <= 20000; 
                 });
 
                 if (candidates.length === 0) {
                     alert("半径20km圏内に神社が見つかりませんでした。別の場所で試してください。");
+                    lotteryBtn.disabled = false;
                     return;
                 }
 
+                // 抽選を実行（裏で先に決定しておく）
                 taTargetShrine = candidates[Math.floor(Math.random() * candidates.length)];
                 
-                const dist = getDistance(uLat, uLng, taTargetShrine.北緯, taTargetShrine.東経);
-                const bear = getBearing(uLat, uLng, taTargetShrine.北緯, taTargetShrine.東経);
-
-                document.getElementById("ta-shrine-name").innerText = taTargetShrine.名称;
-                document.getElementById("ta-shrine-coords").innerText = `${taTargetShrine.北緯.toFixed(6)}, ${taTargetShrine.東経.toFixed(6)}`;
-                document.getElementById("ta-shrine-bearing").innerText = bear;
-                document.getElementById("ta-shrine-distance").innerText = Math.round(dist);
+                // プログレスバーの演出開始
+                const container = document.getElementById("ta-progress-container");
+                const bar = document.getElementById("ta-progress-bar");
                 
-                document.getElementById("ta-target").style.display = "block";
-                document.getElementById("ta-start-btn").disabled = false;
+                document.getElementById("ta-target").style.display = "none"; // 前回の結果を隠す
+                container.style.display = "block"; // バーを表示
+                bar.style.width = "0%";
+
+                // 1秒（1000ms）かけてプログレスバーを満タンにするアニメーション
+                const duration = 1000; 
+                const intervalTime = 50; 
+                let elapsed = 0;
+
+                const progressInterval = setInterval(() => {
+                    elapsed += intervalTime;
+                    const percentage = Math.min((elapsed / duration) * 100, 100);
+                    bar.style.width = `${percentage}%`;
+
+                    if (elapsed >= duration) {
+                        clearInterval(progressInterval);
+                        
+                        // アニメーション完了後の処理
+                        setTimeout(() => {
+                            container.style.display = "none"; // バーを隠す
+                            
+                            // データの反映
+                            const dist = getDistance(uLat, uLng, taTargetShrine.北緯, taTargetShrine.東経);
+                            const bear = getBearing(uLat, uLng, taTargetShrine.北緯, taTargetShrine.東経);
+
+                            document.getElementById("ta-shrine-name").innerText = taTargetShrine.名称;
+                            document.getElementById("ta-shrine-coords").innerText = `${taTargetShrine.北緯.toFixed(6)}, ${taTargetShrine.東経.toFixed(6)}`;
+                            document.getElementById("ta-shrine-bearing").innerText = bear;
+                            document.getElementById("ta-shrine-distance").innerText = Math.round(dist);
+                            
+                            // 画面の表示更新
+                            document.getElementById("ta-target").style.display = "block";
+                            document.getElementById("ta-start-btn").disabled = false;
+                            lotteryBtn.disabled = false; // ボタンを元に戻す
+                        }, 200); // 100%に達したあと、一瞬だけ余韻を残す
+                    }
+                }, intervalTime);
+
+            }, (err) => {
+                alert("位置情報の取得に失敗しました。GPS設定を確認してください。");
+                lotteryBtn.disabled = false;
             });
         }
 
